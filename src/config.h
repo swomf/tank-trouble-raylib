@@ -34,6 +34,10 @@
 #define TURN_SPEED 140.0f
 #define CANNON_SCALE 0.5f
 
+#define TANK_COLORS                                                            \
+  {(Color){0, 228, 48, 255}, (Color){230, 41, 55, 255},                        \
+   (Color){0, 121, 241, 255}, (Color){255, 161, 0, 255}};
+
 // tank controls
 #define TANK_CONTROLS_MSG                                                      \
   "P1 WASD + C ... "                                                           \

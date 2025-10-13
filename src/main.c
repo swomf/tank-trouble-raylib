@@ -39,15 +39,10 @@ static Wall walls[MAX_WALLS];
 static int wallCount = 0;
 static Cell maze[MAZE_ROWS][MAZE_COLS];
 static Sound SND_FIRE;
-static Sound SND_BOUNCE;
-static Sound SND_HIT;
 
 // helpers
 static inline float Dot2(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
 static inline float Len2(Vector2 a) { return sqrtf(a.x * a.x + a.y * a.y); }
-static inline float ClampF(float x, float a, float b) {
-  return x < a ? a : (x > b ? b : x);
-}
 
 // func declarations
 static void InitGame(void);
@@ -83,8 +78,6 @@ int main(void) {
     EndDrawing();
   }
   UnloadSound(SND_FIRE);
-  UnloadSound(SND_BOUNCE);
-  UnloadSound(SND_HIT);
   CloseAudioDevice();
   CloseWindow();
   return 0;
@@ -94,12 +87,7 @@ static void InitGame(void) {
   InitAudioDevice();
   SetMasterVolume(MASTER_VOLUME);
   SND_FIRE = LoadSound("assets/fire.ogg");
-  // SND_BOUNCE = LoadSound("assets/bounce.ogg");
-  // SND_HIT = LoadSound("assets/hit.ogg");
-  // quieter
   SetSoundVolume(SND_FIRE, 0.55f);
-  SetSoundVolume(SND_BOUNCE, 0.45f);
-  SetSoundVolume(SND_HIT, 0.65f);
 
   SetRandomSeed((unsigned)time(NULL));
   ResetRound();
@@ -120,7 +108,7 @@ static void ResetRound(void) {
                 ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
       (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
                 ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f}};
-  Color colors[4] = {GREEN, RED, BLUE, ORANGE};
+  Color colors[4] = TANK_COLORS;
 
   for (int i = 0; i < 4; i++) {
     tanks[i].pos = corners[i];
@@ -540,14 +528,14 @@ static void BuildWalls(void) {
   // internal walls: only add east and south to avoid dupes
   for (int r = 0; r < MAZE_ROWS; r++) {
     for (int c = 0; c < MAZE_COLS; c++) {
-      if (maze[r][c].wall[1]) { // East
+      if (maze[r][c].wall[1]) { // east
         float x = ORIGIN_X + (c + 1) * CELL;
         float y = ORIGIN_Y + r * CELL;
         if (wallCount < MAX_WALLS)
           walls[wallCount++].rect = (Rectangle){x - WALL_T / 2, y - WALL_T / 2,
                                                 WALL_T, CELL + WALL_T};
       }
-      if (maze[r][c].wall[2]) { // South
+      if (maze[r][c].wall[2]) { // south
         float x = ORIGIN_X + c * CELL;
         float y = ORIGIN_Y + (r + 1) * CELL;
         if (wallCount < MAX_WALLS)
