@@ -5,40 +5,43 @@
 #include <time.h>
 
 // tunables
-#define SCREEN_W 1000
-#define SCREEN_H 800
-#define MAZE_COLS 25
-#define MAZE_ROWS 18
-#define CELL 40
+#define SCREEN_W 1200
+#define SCREEN_H 900
+#define MAZE_COLS 20
+#define MAZE_ROWS 14
+#define CELL 60
 #define WALL_T 8.0f
 
 #define ORIGIN_X ((SCREEN_W - (MAZE_COLS * CELL)) / 2)
 #define ORIGIN_Y ((SCREEN_H - (MAZE_ROWS * CELL)) / 2)
 
 #define MAX_WALLS 8000
-#define MAX_BULLETS 256
+#define MAX_BULLETS 512
 #define MAX_BOUNCES 6
 
 #define BULLET_R 3.0f
 #define BULLET_SPEED 420.0f
 #define BULLET_LIFETIME 5.0f
-#define TANK_W 28.0f
+#define TANK_W 30.0f
 #define TANK_H 22.0f
-#define TANK_SPEED 140.0f
+#define TANK_SPEED 150.0f
 #define TURN_SPEED 140.0f
+#define CANNON_SCALE                                                           \
+  0.5f // shorten barrel (FIXME: this does nOT stop wall shots)
 
-// types (separate file?)
+// types
 typedef struct {
   Vector2 pos;
   float angleDeg;
-  Vector2 vel;
+  Color color;
 } Tank;
 
 typedef struct {
   Vector2 pos, vel;
   bool active;
   float lifetimeSec;
-  int bounces; // how many ricochets done
+  int bounces;
+  Color color;
 } Bullet;
 
 typedef struct {
@@ -51,7 +54,7 @@ typedef struct {
 } Cell;
 
 // globals
-static Tank player;
+static Tank tanks[2];
 static Bullet bullets[MAX_BULLETS];
 static Wall walls[MAX_WALLS];
 static int wallCount = 0;
@@ -63,21 +66,16 @@ static void ResetRound(void);
 static void UpdateGame(float dt);
 static void DrawGame(void);
 
-static void FireBullet(void);
+static void FireBullet(Tank *shooter);
 static bool CheckBulletWallCollision(Bullet *b, Wall *w);
 static void ReflectBullet(Bullet *b, Vector2 n);
 
 static void MazeInit(void);
 static void MazeDFS(int r, int c);
 static void BuildWalls(void);
-
 static void HandleTankWallCollision(Tank *t);
 
-// math helpers
 static inline float Dot2(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
-static inline float Clampf(float x, float a, float b) {
-  return x < a ? a : (x > b ? b : x);
-}
 
 int main(void) {
   InitWindow(SCREEN_W, SCREEN_H, "tank trouble raylib");
@@ -106,36 +104,64 @@ static void ResetRound(void) {
   MazeDFS(0, 0);
   BuildWalls();
 
-  player.pos = (Vector2){ORIGIN_X + CELL / 2.0f, ORIGIN_Y + CELL / 2.0f};
-  player.angleDeg = 0;
-  player.vel = (Vector2){0, 0};
+  tanks[0].pos = (Vector2){ORIGIN_X + CELL / 2.0f, ORIGIN_Y + CELL / 2.0f};
+  tanks[0].angleDeg = 0;
+  tanks[0].color = GREEN;
+
+  tanks[1].pos = (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL / 2.0f,
+                           ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL / 2.0f};
+  tanks[1].angleDeg = 180;
+  tanks[1].color = RED;
+
   for (int i = 0; i < MAX_BULLETS; i++)
     bullets[i].active = false;
 }
 
 static void UpdateGame(float dt) {
-  // movement
+  // tank 1 movement: arrow keys, space
   if (IsKeyDown(KEY_LEFT))
-    player.angleDeg -= TURN_SPEED * dt;
+    tanks[0].angleDeg -= TURN_SPEED * dt;
   if (IsKeyDown(KEY_RIGHT))
-    player.angleDeg += TURN_SPEED * dt;
+    tanks[0].angleDeg += TURN_SPEED * dt;
 
-  float rad = player.angleDeg * DEG2RAD;
-  Vector2 fwd = {cosf(rad), sinf(rad)};
+  float rad0 = tanks[0].angleDeg * DEG2RAD;
+  Vector2 fwd0 = {cosf(rad0), sinf(rad0)};
 
   if (IsKeyDown(KEY_UP)) {
-    player.pos.x += fwd.x * TANK_SPEED * dt;
-    player.pos.y += fwd.y * TANK_SPEED * dt;
+    tanks[0].pos.x += fwd0.x * TANK_SPEED * dt;
+    tanks[0].pos.y += fwd0.y * TANK_SPEED * dt;
   }
   if (IsKeyDown(KEY_DOWN)) {
-    player.pos.x -= fwd.x * TANK_SPEED * dt;
-    player.pos.y -= fwd.y * TANK_SPEED * dt;
+    tanks[0].pos.x -= fwd0.x * TANK_SPEED * dt;
+    tanks[0].pos.y -= fwd0.y * TANK_SPEED * dt;
   }
 
-  HandleTankWallCollision(&player);
-
   if (IsKeyPressed(KEY_SPACE))
-    FireBullet();
+    FireBullet(&tanks[0]);
+  HandleTankWallCollision(&tanks[0]);
+
+  // tank 2 movement: wasd, f
+  if (IsKeyDown(KEY_A))
+    tanks[1].angleDeg -= TURN_SPEED * dt;
+  if (IsKeyDown(KEY_D))
+    tanks[1].angleDeg += TURN_SPEED * dt;
+
+  float rad1 = tanks[1].angleDeg * DEG2RAD;
+  Vector2 fwd1 = {cosf(rad1), sinf(rad1)};
+
+  if (IsKeyDown(KEY_W)) {
+    tanks[1].pos.x += fwd1.x * TANK_SPEED * dt;
+    tanks[1].pos.y += fwd1.y * TANK_SPEED * dt;
+  }
+  if (IsKeyDown(KEY_S)) {
+    tanks[1].pos.x -= fwd1.x * TANK_SPEED * dt;
+    tanks[1].pos.y -= fwd1.y * TANK_SPEED * dt;
+  }
+
+  if (IsKeyPressed(KEY_F))
+    FireBullet(&tanks[1]);
+  HandleTankWallCollision(&tanks[1]);
+
   if (IsKeyPressed(KEY_R))
     ResetRound();
 
@@ -170,33 +196,37 @@ static void DrawGame(void) {
   for (int i = 0; i < wallCount; i++)
     DrawRectangleRec(walls[i].rect, (Color){100, 100, 110, 255});
 
-  // tank is rectangle oriented by angle
-  Rectangle body = {player.pos.x, player.pos.y, TANK_W, TANK_H};
-  DrawRectanglePro(body, (Vector2){TANK_W / 2, TANK_H / 2}, player.angleDeg,
-                   (Color){30, 200, 30, 255});
-  float rad = player.angleDeg * DEG2RAD;
-  Vector2 barrel = {player.pos.x + cosf(rad) * TANK_W * 0.7f,
-                    player.pos.y + sinf(rad) * TANK_W * 0.7f};
-  DrawLineEx(player.pos, barrel, 4.0f, GREEN);
+  for (int t = 0; t < 2; t++) {
+    float rad = tanks[t].angleDeg * DEG2RAD;
+    Rectangle body = {tanks[t].pos.x, tanks[t].pos.y, TANK_W, TANK_H};
+    DrawRectanglePro(body, (Vector2){TANK_W / 2, TANK_H / 2}, tanks[t].angleDeg,
+                     tanks[t].color);
+    // shorter cannon
+    Vector2 barrel = {tanks[t].pos.x + cosf(rad) * TANK_W * CANNON_SCALE,
+                      tanks[t].pos.y + sinf(rad) * TANK_W * CANNON_SCALE};
+    DrawLineEx(tanks[t].pos, barrel, 4.0f, RAYWHITE);
+  }
 
   // bullet
   for (int i = 0; i < MAX_BULLETS; i++)
     if (bullets[i].active)
-      DrawCircleV(bullets[i].pos, BULLET_R, YELLOW);
+      DrawCircleV(bullets[i].pos, BULLET_R, bullets[i].color);
 
-  DrawText("Arrows move/turn  SPACE shoot  R regen maze", 10, 10, 18, RAYWHITE);
+  DrawText("P1: arrows + SPACE   P2: WASD + F   R: new maze", 10, 10, 20,
+           RAYWHITE);
 }
 
-static void FireBullet(void) {
+static void FireBullet(Tank *shooter) {
   for (int i = 0; i < MAX_BULLETS; i++) {
     if (!bullets[i].active) {
-      float rad = player.angleDeg * DEG2RAD;
+      float rad = shooter->angleDeg * DEG2RAD;
       Vector2 dir = {cosf(rad), sinf(rad)};
       bullets[i].active = true;
       bullets[i].bounces = 0;
       bullets[i].lifetimeSec = BULLET_LIFETIME;
-      bullets[i].pos = (Vector2){player.pos.x + dir.x * (TANK_W / 2 + 6),
-                                 player.pos.y + dir.y * (TANK_W / 2 + 6)};
+      bullets[i].color = shooter->color;
+      bullets[i].pos = (Vector2){shooter->pos.x + dir.x * (TANK_W / 2 + 6),
+                                 shooter->pos.y + dir.y * (TANK_W / 2 + 6)};
       bullets[i].vel = (Vector2){dir.x * BULLET_SPEED, dir.y * BULLET_SPEED};
       break;
     }
