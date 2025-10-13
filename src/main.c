@@ -11,13 +11,15 @@
 #define MAZE_ROWS 14
 #define CELL 60
 #define WALL_T 8.0f
+#define LOOP_CHANCE                                                            \
+  0.18f // chance to knock down an extra (east/south) wall after DFS
 
 #define ORIGIN_X ((SCREEN_W - (MAZE_COLS * CELL)) / 2)
 #define ORIGIN_Y ((SCREEN_H - (MAZE_ROWS * CELL)) / 2)
 
-#define MAX_WALLS 8000
-#define MAX_BULLETS 512
-#define MAX_BOUNCES 6
+#define MAX_WALLS 9000
+#define MAX_BULLETS 600
+#define MAX_BOUNCES 8
 
 #define BULLET_R 3.0f
 #define BULLET_SPEED 420.0f
@@ -26,14 +28,19 @@
 #define TANK_H 22.0f
 #define TANK_SPEED 150.0f
 #define TURN_SPEED 140.0f
-#define CANNON_SCALE                                                           \
-  0.5f // shorten barrel (FIXME: this does nOT stop wall shots)
+#define CANNON_SCALE 0.5f
+#define SPAWN_SAFETY_ITER                                                      \
+  2 // how many immediate collision-resolve passes on spawn
+
+#define START_LIVES 3
 
 // types
 typedef struct {
   Vector2 pos;
   float angleDeg;
   Color color;
+  int lives;
+  bool alive;
 } Tank;
 
 typedef struct {
@@ -41,6 +48,7 @@ typedef struct {
   bool active;
   float lifetimeSec;
   int bounces;
+  int owner; // tank index [0..3]
   Color color;
 } Bullet;
 
@@ -54,11 +62,18 @@ typedef struct {
 } Cell;
 
 // globals
-static Tank tanks[2];
+static Tank tanks[4];
 static Bullet bullets[MAX_BULLETS];
 static Wall walls[MAX_WALLS];
 static int wallCount = 0;
 static Cell maze[MAZE_ROWS][MAZE_COLS];
+
+// helpers
+static inline float Dot2(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
+static inline float Len2(Vector2 a) { return sqrtf(a.x * a.x + a.y * a.y); }
+static inline float ClampF(float x, float a, float b) {
+  return x < a ? a : (x > b ? b : x);
+}
 
 // func declarations
 static void InitGame(void);
@@ -66,16 +81,21 @@ static void ResetRound(void);
 static void UpdateGame(float dt);
 static void DrawGame(void);
 
-static void FireBullet(Tank *shooter);
-static bool CheckBulletWallCollision(Bullet *b, Wall *w);
+static void FireBullet(int tidx);
+static bool BulletCollideWall(Bullet *b, Wall *w);
 static void ReflectBullet(Bullet *b, Vector2 n);
+static void HandleTankWallCollision(Tank *t);
 
 static void MazeInit(void);
 static void MazeDFS(int r, int c);
+static void MazeAddLoops(void);
 static void BuildWalls(void);
-static void HandleTankWallCollision(Tank *t);
 
-static inline float Dot2(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
+static bool BulletHitsTank(Bullet *b, const Tank *t);
+static void HandleBulletHitsTanks(void);
+static void HandleBulletHitsBullets(void);
+
+static void RespawnTank(int tidx);
 
 int main(void) {
   InitWindow(SCREEN_W, SCREEN_H, "tank trouble raylib");
@@ -102,65 +122,118 @@ static void InitGame(void) {
 static void ResetRound(void) {
   MazeInit();
   MazeDFS(0, 0);
+  MazeAddLoops(); // slice out some walls from dfs to make maze open
   BuildWalls();
 
-  tanks[0].pos = (Vector2){ORIGIN_X + CELL / 2.0f, ORIGIN_Y + CELL / 2.0f};
-  tanks[0].angleDeg = 0;
-  tanks[0].color = GREEN;
+  // corners spawn
+  Vector2 corners[4] = {
+      (Vector2){ORIGIN_X + CELL * 0.5f, ORIGIN_Y + CELL * 0.5f},
+      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+                ORIGIN_Y + CELL * 0.5f},
+      (Vector2){ORIGIN_X + CELL * 0.5f,
+                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
+      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f}};
+  Color colors[4] = {GREEN, RED, BLUE, ORANGE};
 
-  tanks[1].pos = (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL / 2.0f,
-                           ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL / 2.0f};
-  tanks[1].angleDeg = 180;
-  tanks[1].color = RED;
-
+  for (int i = 0; i < 4; i++) {
+    tanks[i].pos = corners[i];
+    tanks[i].angleDeg = (i == 1)   ? 180.0f
+                        : (i == 2) ? 90.0f
+                        : (i == 3) ? -90.0f
+                                   : 0.0f;
+    tanks[i].color = colors[i];
+    tanks[i].lives = START_LIVES;
+    tanks[i].alive = true;
+  }
   for (int i = 0; i < MAX_BULLETS; i++)
     bullets[i].active = false;
 }
 
 static void UpdateGame(float dt) {
-  // tank 1 movement: arrow keys, space
-  if (IsKeyDown(KEY_LEFT))
-    tanks[0].angleDeg -= TURN_SPEED * dt;
-  if (IsKeyDown(KEY_RIGHT))
-    tanks[0].angleDeg += TURN_SPEED * dt;
-
-  float rad0 = tanks[0].angleDeg * DEG2RAD;
-  Vector2 fwd0 = {cosf(rad0), sinf(rad0)};
-
-  if (IsKeyDown(KEY_UP)) {
-    tanks[0].pos.x += fwd0.x * TANK_SPEED * dt;
-    tanks[0].pos.y += fwd0.y * TANK_SPEED * dt;
-  }
-  if (IsKeyDown(KEY_DOWN)) {
-    tanks[0].pos.x -= fwd0.x * TANK_SPEED * dt;
-    tanks[0].pos.y -= fwd0.y * TANK_SPEED * dt;
-  }
-
-  if (IsKeyPressed(KEY_SPACE))
-    FireBullet(&tanks[0]);
-  HandleTankWallCollision(&tanks[0]);
-
-  // tank 2 movement: wasd, f
-  if (IsKeyDown(KEY_A))
-    tanks[1].angleDeg -= TURN_SPEED * dt;
-  if (IsKeyDown(KEY_D))
-    tanks[1].angleDeg += TURN_SPEED * dt;
-
-  float rad1 = tanks[1].angleDeg * DEG2RAD;
-  Vector2 fwd1 = {cosf(rad1), sinf(rad1)};
-
-  if (IsKeyDown(KEY_W)) {
-    tanks[1].pos.x += fwd1.x * TANK_SPEED * dt;
-    tanks[1].pos.y += fwd1.y * TANK_SPEED * dt;
-  }
-  if (IsKeyDown(KEY_S)) {
-    tanks[1].pos.x -= fwd1.x * TANK_SPEED * dt;
-    tanks[1].pos.y -= fwd1.y * TANK_SPEED * dt;
+  // P1: WASD + C
+  if (tanks[0].alive) {
+    if (IsKeyDown(KEY_A))
+      tanks[0].angleDeg -= TURN_SPEED * dt;
+    if (IsKeyDown(KEY_D))
+      tanks[0].angleDeg += TURN_SPEED * dt;
+    float r = tanks[0].angleDeg * DEG2RAD;
+    Vector2 f = (Vector2){cosf(r), sinf(r)};
+    if (IsKeyDown(KEY_W)) {
+      tanks[0].pos.x += f.x * TANK_SPEED * dt;
+      tanks[0].pos.y += f.y * TANK_SPEED * dt;
+    }
+    if (IsKeyDown(KEY_S)) {
+      tanks[0].pos.x -= f.x * TANK_SPEED * dt;
+      tanks[0].pos.y -= f.y * TANK_SPEED * dt;
+    }
+    HandleTankWallCollision(&tanks[0]);
+    if (IsKeyPressed(KEY_C))
+      FireBullet(0);
   }
 
-  if (IsKeyPressed(KEY_F))
-    FireBullet(&tanks[1]);
-  HandleTankWallCollision(&tanks[1]);
+  // P2: IJKL + M
+  if (tanks[1].alive) {
+    if (IsKeyDown(KEY_J))
+      tanks[1].angleDeg -= TURN_SPEED * dt;
+    if (IsKeyDown(KEY_L))
+      tanks[1].angleDeg += TURN_SPEED * dt;
+    float r = tanks[1].angleDeg * DEG2RAD;
+    Vector2 f = (Vector2){cosf(r), sinf(r)};
+    if (IsKeyDown(KEY_I)) {
+      tanks[1].pos.x += f.x * TANK_SPEED * dt;
+      tanks[1].pos.y += f.y * TANK_SPEED * dt;
+    }
+    if (IsKeyDown(KEY_K)) {
+      tanks[1].pos.x -= f.x * TANK_SPEED * dt;
+      tanks[1].pos.y -= f.y * TANK_SPEED * dt;
+    }
+    HandleTankWallCollision(&tanks[1]);
+    if (IsKeyPressed(KEY_M))
+      FireBullet(1);
+  }
+
+  // P3: arrows + slash
+  if (tanks[2].alive) {
+    if (IsKeyDown(KEY_LEFT))
+      tanks[2].angleDeg -= TURN_SPEED * dt;
+    if (IsKeyDown(KEY_RIGHT))
+      tanks[2].angleDeg += TURN_SPEED * dt;
+    float r = tanks[2].angleDeg * DEG2RAD;
+    Vector2 f = (Vector2){cosf(r), sinf(r)};
+    if (IsKeyDown(KEY_UP)) {
+      tanks[2].pos.x += f.x * TANK_SPEED * dt;
+      tanks[2].pos.y += f.y * TANK_SPEED * dt;
+    }
+    if (IsKeyDown(KEY_DOWN)) {
+      tanks[2].pos.x -= f.x * TANK_SPEED * dt;
+      tanks[2].pos.y -= f.y * TANK_SPEED * dt;
+    }
+    HandleTankWallCollision(&tanks[2]);
+    if (IsKeyPressed(KEY_SLASH))
+      FireBullet(2);
+  }
+
+  // P4: (Numpad) 8456 + 3
+  if (tanks[3].alive) {
+    if (IsKeyDown(KEY_KP_4))
+      tanks[3].angleDeg -= TURN_SPEED * dt;
+    if (IsKeyDown(KEY_KP_6))
+      tanks[3].angleDeg += TURN_SPEED * dt;
+    float r = tanks[3].angleDeg * DEG2RAD;
+    Vector2 f = (Vector2){cosf(r), sinf(r)};
+    if (IsKeyDown(KEY_KP_8)) {
+      tanks[3].pos.x += f.x * TANK_SPEED * dt;
+      tanks[3].pos.y += f.y * TANK_SPEED * dt;
+    }
+    if (IsKeyDown(KEY_KP_5)) {
+      tanks[3].pos.x -= f.x * TANK_SPEED * dt;
+      tanks[3].pos.y -= f.y * TANK_SPEED * dt;
+    }
+    HandleTankWallCollision(&tanks[3]);
+    if (IsKeyPressed(KEY_KP_3))
+      FireBullet(3);
+  }
 
   if (IsKeyPressed(KEY_R))
     ResetRound();
@@ -176,7 +249,7 @@ static void UpdateGame(float dt) {
 
     bool bounced = false;
     for (int j = 0; j < wallCount; j++) {
-      if (CheckBulletWallCollision(b, &walls[j])) {
+      if (BulletCollideWall(b, &walls[j])) {
         bounced = true;
         break;
       }
@@ -188,20 +261,34 @@ static void UpdateGame(float dt) {
     }
     if (b->lifetimeSec <= 0)
       b->active = false;
+    if (b->pos.x < -200 || b->pos.x > SCREEN_W + 200 || b->pos.y < -200 ||
+        b->pos.y > SCREEN_H + 200)
+      b->active = false;
+  }
+
+  // pvp. also bullets can hit each other
+  HandleBulletHitsTanks();
+  HandleBulletHitsBullets();
+
+  for (int t = 0; t < 4; t++) {
+    if (!tanks[t].alive && tanks[t].lives > 0) {
+      RespawnTank(t);
+    }
   }
 }
 
 static void DrawGame(void) {
-  // wall
   for (int i = 0; i < wallCount; i++)
     DrawRectangleRec(walls[i].rect, (Color){100, 100, 110, 255});
 
-  for (int t = 0; t < 2; t++) {
+  for (int t = 0; t < 4; t++) {
+    if (!tanks[t].alive)
+      continue;
     float rad = tanks[t].angleDeg * DEG2RAD;
     Rectangle body = {tanks[t].pos.x, tanks[t].pos.y, TANK_W, TANK_H};
     DrawRectanglePro(body, (Vector2){TANK_W / 2, TANK_H / 2}, tanks[t].angleDeg,
                      tanks[t].color);
-    // shorter cannon
+    // TODO: barrel length is visual only. basically legacy code
     Vector2 barrel = {tanks[t].pos.x + cosf(rad) * TANK_W * CANNON_SCALE,
                       tanks[t].pos.y + sinf(rad) * TANK_W * CANNON_SCALE};
     DrawLineEx(tanks[t].pos, barrel, 4.0f, RAYWHITE);
@@ -212,28 +299,58 @@ static void DrawGame(void) {
     if (bullets[i].active)
       DrawCircleV(bullets[i].pos, BULLET_R, bullets[i].color);
 
-  DrawText("P1: arrows + SPACE   P2: WASD + F   R: new maze", 10, 10, 20,
-           RAYWHITE);
+  // TODO: the hud should be tunable too since players can change their controls
+  // and recompile
+  int y = 10;
+  DrawText("P1 WASD+C   P2 IJKL+M   P3 Arrows+/   P4 Numpad 8456 + KP3   R: "
+           "new maze",
+           10, y, 18, RAYWHITE);
+  y += 22;
+  for (int t = 0; t < 4; t++) {
+    DrawText(TextFormat("P%d lives: %d", t + 1, tanks[t].lives), 10 + t * 220,
+             y, 20, tanks[t].color);
+  }
 }
 
-static void FireBullet(Tank *shooter) {
+static void FireBullet(int tidx) {
+  if (!tanks[tidx].alive)
+    return;
+
   for (int i = 0; i < MAX_BULLETS; i++) {
     if (!bullets[i].active) {
-      float rad = shooter->angleDeg * DEG2RAD;
-      Vector2 dir = {cosf(rad), sinf(rad)};
+      float rad = tanks[tidx].angleDeg * DEG2RAD;
+      Vector2 dir = (Vector2){cosf(rad), sinf(rad)};
+
       bullets[i].active = true;
       bullets[i].bounces = 0;
       bullets[i].lifetimeSec = BULLET_LIFETIME;
-      bullets[i].color = shooter->color;
-      bullets[i].pos = (Vector2){shooter->pos.x + dir.x * (TANK_W / 2 + 6),
-                                 shooter->pos.y + dir.y * (TANK_W / 2 + 6)};
+      bullets[i].owner = tidx;
+      bullets[i].color = tanks[tidx].color;
+      bullets[i].pos = (Vector2){
+          tanks[tidx].pos.x + dir.x * (TANK_W * 0.5f + BULLET_R + 2.0f),
+          tanks[tidx].pos.y + dir.y * (TANK_W * 0.5f + BULLET_R + 2.0f)};
       bullets[i].vel = (Vector2){dir.x * BULLET_SPEED, dir.y * BULLET_SPEED};
-      break;
+
+      // Spawn safety: if spawned overlapping a wall (barrel stuffed),
+      // annihilate it (TODO: this should maybe just bounce back instead)
+      for (int pass = 0; pass < SPAWN_SAFETY_ITER; ++pass) {
+        bool hit = false;
+        for (int w = 0; w < wallCount; ++w) {
+          if (BulletCollideWall(&bullets[i], &walls[w])) {
+            hit = true;
+            break;
+          }
+        }
+        if (!hit)
+          break;
+        bullets[i].bounces = MAX_BOUNCES;
+      }
+      return;
     }
   }
 }
 
-static bool CheckBulletWallCollision(Bullet *b, Wall *w) {
+static bool BulletCollideWall(Bullet *b, Wall *w) {
   Rectangle bb = {b->pos.x - BULLET_R, b->pos.y - BULLET_R, BULLET_R * 2,
                   BULLET_R * 2};
   if (!CheckCollisionRecs(bb, w->rect))
@@ -244,28 +361,34 @@ static bool CheckBulletWallCollision(Bullet *b, Wall *w) {
   float right = (w->rect.x + w->rect.width) - cx;
   float top = cy - w->rect.y;
   float bottom = (w->rect.y + w->rect.height) - cy;
-  float minX = fminf(left, right), minY = fminf(top, bottom);
+
+  float minX = fminf(left, right);
+  float minY = fminf(top, bottom);
+
   Vector2 n = {0};
-  if (minX < minY) {
+  if (minX < minY)
     n = (left < right) ? (Vector2){-1, 0} : (Vector2){1, 0};
-  } else {
+  else
     n = (top < bottom) ? (Vector2){0, -1} : (Vector2){0, 1};
-  }
+
   ReflectBullet(b, n);
-  b->pos.x += n.x * (WALL_T + BULLET_R);
-  b->pos.y += n.y * (WALL_T + BULLET_R);
+
+  const float sep = WALL_T * 0.6f + BULLET_R;
+  b->pos.x += n.x * sep;
+  b->pos.y += n.y * sep;
+
   return true;
 }
 
 static void ReflectBullet(Bullet *b, Vector2 n) {
-  float len = sqrtf(n.x * n.x + n.y * n.y);
-  if (len > 0) {
-    n.x /= len;
-    n.y /= len;
+  float L = Len2(n);
+  if (L > 0) {
+    n.x /= L;
+    n.y /= L;
   }
   float d = Dot2(b->vel, n);
-  b->vel.x -= 2 * d * n.x;
-  b->vel.y -= 2 * d * n.y;
+  b->vel.x -= 2.0f * d * n.x;
+  b->vel.y -= 2.0f * d * n.y;
 }
 
 // axis aligned boudning boxes
@@ -287,19 +410,90 @@ static void HandleTankWallCollision(Tank *t) {
         continue;
 
       if (px < py) {
-        float sx = (dx < 0) ? -1 : 1;
-        t->pos.x += px * sx;
+        t->pos.x += (dx < 0 ? -px : px);
       } else {
-        float sy = (dy < 0) ? -1 : 1;
-        t->pos.y += py * sy;
+        t->pos.y += (dy < 0 ? -py : py);
       }
+
       tankBox = (Rectangle){t->pos.x - TANK_W / 2, t->pos.y - TANK_H / 2,
                             TANK_W, TANK_H};
     }
   }
 }
 
+// bullet vs tank is approximated by circle. dont tell the tryhards
+// selfdamage allowed ofc
+static bool BulletHitsTank(Bullet *b, const Tank *t) {
+  if (!t->alive)
+    return false;
+  float rr = (TANK_W > TANK_H ? TANK_W : TANK_H) * 0.5f; // radius
+  float dx = b->pos.x - t->pos.x;
+  float dy = b->pos.y - t->pos.y;
+  float r = rr + BULLET_R;
+  return (dx * dx + dy * dy) <= (r * r);
+}
+
+static void HandleBulletHitsTanks(void) {
+  for (int i = 0; i < MAX_BULLETS; i++) {
+    Bullet *b = &bullets[i];
+    if (!b->active)
+      continue;
+    for (int t = 0; t < 4; t++) {
+      if (BulletHitsTank(b, &tanks[t])) {
+        b->active = false;
+        if (tanks[t].alive) {
+          tanks[t].lives--;
+          // dies if now < 1; respawn handled in update func
+          tanks[t].alive = (tanks[t].lives > 0);
+        }
+        break;
+      }
+    }
+  }
+}
+
+// bullet vs bullet is obviously circle vs circle
+// they destroy each other on impact because i dont trust ngnl style bouncing
+// (yet...)
+static void HandleBulletHitsBullets(void) {
+  for (int i = 0; i < MAX_BULLETS; i++) {
+    if (!bullets[i].active)
+      continue;
+    for (int j = i + 1; j < MAX_BULLETS; j++) {
+      if (!bullets[j].active)
+        continue;
+      float dx = bullets[i].pos.x - bullets[j].pos.x;
+      float dy = bullets[i].pos.y - bullets[j].pos.y;
+      float rr = (BULLET_R + BULLET_R);
+      if (dx * dx + dy * dy <= rr * rr) {
+        bullets[i].active = false;
+        bullets[j].active = false;
+        break;
+      }
+    }
+  }
+}
+
+static void RespawnTank(int tidx) {
+  // Place back near the corner spawn, angle reset
+  Vector2 respawns[4] = {
+      (Vector2){ORIGIN_X + CELL * 0.5f, ORIGIN_Y + CELL * 0.5f},
+      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+                ORIGIN_Y + CELL * 0.5f},
+      (Vector2){ORIGIN_X + CELL * 0.5f,
+                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
+      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f}};
+  tanks[tidx].pos = respawns[tidx];
+  tanks[tidx].angleDeg = (tidx == 1)   ? 180.0f
+                         : (tidx == 2) ? 90.0f
+                         : (tidx == 3) ? -90.0f
+                                       : 0.0f;
+  tanks[tidx].alive = true;
+}
+
 // basic dfs maze (see wikipedia)
+// to make imperfect (has loops) we just randomly remove a few walls
 static void MazeInit(void) {
   for (int r = 0; r < MAZE_ROWS; r++) {
     for (int c = 0; c < MAZE_COLS; c++) {
@@ -311,12 +505,12 @@ static void MazeInit(void) {
 }
 static void MazeDFS(int r, int c) {
   maze[r][c].visited = true;
-  int dirs[4] = {0, 1, 2, 3};
+  int dirs[4] = {0, 1, 2, 3}; // n,e,s,w
   for (int i = 3; i > 0; i--) {
     int j = GetRandomValue(0, i);
-    int tmp = dirs[i];
+    int t = dirs[i];
     dirs[i] = dirs[j];
-    dirs[j] = tmp;
+    dirs[j] = t;
   }
   for (int k = 0; k < 4; k++) {
     int d = dirs[k];
@@ -349,36 +543,57 @@ static void MazeDFS(int r, int c) {
     MazeDFS(nr, nc);
   }
 }
+static void MazeAddLoops(void) {
+  for (int r = 0; r < MAZE_ROWS; r++) {
+    for (int c = 0; c < MAZE_COLS; c++) {
+      // east wall (avoid outer boundary)
+      if (c < MAZE_COLS - 1 && maze[r][c].wall[1] &&
+          GetRandomValue(0, 1000) < (int)(LOOP_CHANCE * 1000)) {
+        maze[r][c].wall[1] = false;
+        maze[r][c + 1].wall[3] = false;
+      }
+      // south wall
+      if (r < MAZE_ROWS - 1 && maze[r][c].wall[2] &&
+          GetRandomValue(0, 1000) < (int)(LOOP_CHANCE * 1000)) {
+        maze[r][c].wall[2] = false;
+        maze[r + 1][c].wall[0] = false;
+      }
+    }
+  }
+}
+
 static void BuildWalls(void) {
   wallCount = 0;
   // outer borders
-  Rectangle top = {ORIGIN_X - WALL_T / 2, ORIGIN_Y - WALL_T / 2,
-                   MAZE_COLS * CELL + WALL_T, WALL_T};
-  walls[wallCount++].rect = top;
-  Rectangle bottom = {ORIGIN_X - WALL_T / 2,
-                      ORIGIN_Y + MAZE_ROWS * CELL - WALL_T / 2,
-                      MAZE_COLS * CELL + WALL_T, WALL_T};
-  walls[wallCount++].rect = bottom;
-  Rectangle left = {ORIGIN_X - WALL_T / 2, ORIGIN_Y - WALL_T / 2, WALL_T,
-                    MAZE_ROWS * CELL + WALL_T};
-  walls[wallCount++].rect = left;
-  Rectangle right = {ORIGIN_X + MAZE_COLS * CELL - WALL_T / 2,
-                     ORIGIN_Y - WALL_T / 2, WALL_T, MAZE_ROWS * CELL + WALL_T};
-  walls[wallCount++].rect = right;
+  walls[wallCount++].rect =
+      (Rectangle){ORIGIN_X - WALL_T / 2, ORIGIN_Y - WALL_T / 2,
+                  MAZE_COLS * CELL + WALL_T, WALL_T};
+  walls[wallCount++].rect = (Rectangle){
+      ORIGIN_X - WALL_T / 2, ORIGIN_Y + MAZE_ROWS * CELL - WALL_T / 2,
+      MAZE_COLS * CELL + WALL_T, WALL_T};
+  walls[wallCount++].rect =
+      (Rectangle){ORIGIN_X - WALL_T / 2, ORIGIN_Y - WALL_T / 2, WALL_T,
+                  MAZE_ROWS * CELL + WALL_T};
+  walls[wallCount++].rect =
+      (Rectangle){ORIGIN_X + MAZE_COLS * CELL - WALL_T / 2,
+                  ORIGIN_Y - WALL_T / 2, WALL_T, MAZE_ROWS * CELL + WALL_T};
 
+  // internal walls: only add east and south to avoid dupes
   for (int r = 0; r < MAZE_ROWS; r++) {
     for (int c = 0; c < MAZE_COLS; c++) {
-      if (maze[r][c].wall[1]) { // east
+      if (maze[r][c].wall[1]) { // East
         float x = ORIGIN_X + (c + 1) * CELL;
         float y = ORIGIN_Y + r * CELL;
-        Rectangle rec = {x - WALL_T / 2, y - WALL_T / 2, WALL_T, CELL + WALL_T};
-        walls[wallCount++].rect = rec;
+        if (wallCount < MAX_WALLS)
+          walls[wallCount++].rect = (Rectangle){x - WALL_T / 2, y - WALL_T / 2,
+                                                WALL_T, CELL + WALL_T};
       }
-      if (maze[r][c].wall[2]) { // south
+      if (maze[r][c].wall[2]) { // South
         float x = ORIGIN_X + c * CELL;
         float y = ORIGIN_Y + (r + 1) * CELL;
-        Rectangle rec = {x - WALL_T / 2, y - WALL_T / 2, CELL + WALL_T, WALL_T};
-        walls[wallCount++].rect = rec;
+        if (wallCount < MAX_WALLS)
+          walls[wallCount++].rect = (Rectangle){x - WALL_T / 2, y - WALL_T / 2,
+                                                CELL + WALL_T, WALL_T};
       }
     }
   }
