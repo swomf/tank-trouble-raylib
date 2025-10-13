@@ -1,5 +1,5 @@
-#include "raylib.h"
 #include <math.h>
+#include <raylib.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
@@ -30,7 +30,7 @@
 #define TURN_SPEED 140.0f
 #define CANNON_SCALE 0.5f
 #define SPAWN_SAFETY_ITER                                                      \
-  2 // how many immediate collision-resolve passes on spawn
+  2 // how many immediate collision-resolve passes on bullet spawn
 
 #define START_LIVES 3
 
@@ -67,6 +67,9 @@ static Bullet bullets[MAX_BULLETS];
 static Wall walls[MAX_WALLS];
 static int wallCount = 0;
 static Cell maze[MAZE_ROWS][MAZE_COLS];
+static Sound SND_FIRE;
+static Sound SND_BOUNCE;
+static Sound SND_HIT;
 
 // helpers
 static inline float Dot2(Vector2 a, Vector2 b) { return a.x * b.x + a.y * b.y; }
@@ -110,11 +113,25 @@ int main(void) {
     DrawGame();
     EndDrawing();
   }
+  UnloadSound(SND_FIRE);
+  UnloadSound(SND_BOUNCE);
+  UnloadSound(SND_HIT);
+  CloseAudioDevice();
   CloseWindow();
   return 0;
 }
 
 static void InitGame(void) {
+  InitAudioDevice();
+  SetMasterVolume(0.9f); // tunable?
+  SND_FIRE = LoadSound("assets/fire.ogg");
+  // SND_BOUNCE = LoadSound("assets/bounce.ogg");
+  // SND_HIT = LoadSound("assets/hit.ogg");
+  // quieter
+  SetSoundVolume(SND_FIRE, 0.55f);
+  SetSoundVolume(SND_BOUNCE, 0.45f);
+  SetSoundVolume(SND_HIT, 0.65f);
+
   SetRandomSeed((unsigned)time(NULL));
   ResetRound();
 }
@@ -330,6 +347,8 @@ static void FireBullet(int tidx) {
           tanks[tidx].pos.x + dir.x * (TANK_W * 0.5f + BULLET_R + 2.0f),
           tanks[tidx].pos.y + dir.y * (TANK_W * 0.5f + BULLET_R + 2.0f)};
       bullets[i].vel = (Vector2){dir.x * BULLET_SPEED, dir.y * BULLET_SPEED};
+
+      PlaySound(SND_FIRE); // sounds can't overlap though
 
       // Spawn safety: if spawned overlapping a wall (barrel stuffed),
       // annihilate it (TODO: this should maybe just bounce back instead)
