@@ -1,38 +1,9 @@
+#include "config.h"
 #include <math.h>
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
-
-// tunables
-#define SCREEN_W 1200
-#define SCREEN_H 900
-#define MAZE_COLS 20
-#define MAZE_ROWS 14
-#define CELL 60
-#define WALL_T 8.0f
-#define LOOP_CHANCE                                                            \
-  0.18f // chance to knock down an extra (east/south) wall after DFS
-
-#define ORIGIN_X ((SCREEN_W - (MAZE_COLS * CELL)) / 2)
-#define ORIGIN_Y ((SCREEN_H - (MAZE_ROWS * CELL)) / 2)
-
-#define MAX_WALLS 9000
-#define MAX_BULLETS 600
-#define MAX_BOUNCES 8
-
-#define BULLET_R 3.0f
-#define BULLET_SPEED 420.0f
-#define BULLET_LIFETIME 5.0f
-#define TANK_W 30.0f
-#define TANK_H 22.0f
-#define TANK_SPEED 150.0f
-#define TURN_SPEED 140.0f
-#define CANNON_SCALE 0.5f
-#define SPAWN_SAFETY_ITER                                                      \
-  2 // how many immediate collision-resolve passes on bullet spawn
-
-#define START_LIVES 3
 
 // types
 typedef struct {
@@ -123,7 +94,7 @@ int main(void) {
 
 static void InitGame(void) {
   InitAudioDevice();
-  SetMasterVolume(0.9f); // tunable?
+  SetMasterVolume(MASTER_VOLUME);
   SND_FIRE = LoadSound("assets/fire.ogg");
   // SND_BOUNCE = LoadSound("assets/bounce.ogg");
   // SND_HIT = LoadSound("assets/hit.ogg");
@@ -168,19 +139,19 @@ static void ResetRound(void) {
 }
 
 static void UpdateGame(float dt) {
-  // P1: WASD + C
+  // P1 controls
   if (tanks[0].alive) {
-    if (IsKeyDown(KEY_A))
+    if (IsKeyDown(TANK_0_LEFT))
       tanks[0].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(KEY_D))
+    if (IsKeyDown(TANK_0_RIGHT))
       tanks[0].angleDeg += TURN_SPEED * dt;
     float r = tanks[0].angleDeg * DEG2RAD;
     Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(KEY_W)) {
+    if (IsKeyDown(TANK_0_UP)) {
       tanks[0].pos.x += f.x * TANK_SPEED * dt;
       tanks[0].pos.y += f.y * TANK_SPEED * dt;
     }
-    if (IsKeyDown(KEY_S)) {
+    if (IsKeyDown(TANK_0_DOWN)) {
       tanks[0].pos.x -= f.x * TANK_SPEED * dt;
       tanks[0].pos.y -= f.y * TANK_SPEED * dt;
     }
@@ -189,19 +160,19 @@ static void UpdateGame(float dt) {
       FireBullet(0);
   }
 
-  // P2: IJKL + M
+  // P2 controls
   if (tanks[1].alive) {
-    if (IsKeyDown(KEY_J))
+    if (IsKeyDown(TANK_1_LEFT))
       tanks[1].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(KEY_L))
+    if (IsKeyDown(TANK_1_RIGHT))
       tanks[1].angleDeg += TURN_SPEED * dt;
     float r = tanks[1].angleDeg * DEG2RAD;
     Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(KEY_I)) {
+    if (IsKeyDown(TANK_1_UP)) {
       tanks[1].pos.x += f.x * TANK_SPEED * dt;
       tanks[1].pos.y += f.y * TANK_SPEED * dt;
     }
-    if (IsKeyDown(KEY_K)) {
+    if (IsKeyDown(TANK_1_DOWN)) {
       tanks[1].pos.x -= f.x * TANK_SPEED * dt;
       tanks[1].pos.y -= f.y * TANK_SPEED * dt;
     }
@@ -210,45 +181,45 @@ static void UpdateGame(float dt) {
       FireBullet(1);
   }
 
-  // P3: arrows + slash
+  // P3 controls
   if (tanks[2].alive) {
-    if (IsKeyDown(KEY_LEFT))
+    if (IsKeyDown(TANK_2_LEFT))
       tanks[2].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(KEY_RIGHT))
+    if (IsKeyDown(TANK_2_RIGHT))
       tanks[2].angleDeg += TURN_SPEED * dt;
     float r = tanks[2].angleDeg * DEG2RAD;
     Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(KEY_UP)) {
+    if (IsKeyDown(TANK_2_UP)) {
       tanks[2].pos.x += f.x * TANK_SPEED * dt;
       tanks[2].pos.y += f.y * TANK_SPEED * dt;
     }
-    if (IsKeyDown(KEY_DOWN)) {
+    if (IsKeyDown(TANK_2_DOWN)) {
       tanks[2].pos.x -= f.x * TANK_SPEED * dt;
       tanks[2].pos.y -= f.y * TANK_SPEED * dt;
     }
     HandleTankWallCollision(&tanks[2]);
-    if (IsKeyPressed(KEY_SLASH))
+    if (IsKeyPressed(KEY_SPACE))
       FireBullet(2);
   }
 
-  // P4: (Numpad) 8456 + 3
+  // P4 controls
   if (tanks[3].alive) {
-    if (IsKeyDown(KEY_KP_4))
+    if (IsKeyDown(TANK_3_LEFT))
       tanks[3].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(KEY_KP_6))
+    if (IsKeyDown(TANK_3_RIGHT))
       tanks[3].angleDeg += TURN_SPEED * dt;
     float r = tanks[3].angleDeg * DEG2RAD;
     Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(KEY_KP_8)) {
+    if (IsKeyDown(TANK_3_UP)) {
       tanks[3].pos.x += f.x * TANK_SPEED * dt;
       tanks[3].pos.y += f.y * TANK_SPEED * dt;
     }
-    if (IsKeyDown(KEY_KP_5)) {
+    if (IsKeyDown(TANK_3_DOWN)) {
       tanks[3].pos.x -= f.x * TANK_SPEED * dt;
       tanks[3].pos.y -= f.y * TANK_SPEED * dt;
     }
     HandleTankWallCollision(&tanks[3]);
-    if (IsKeyPressed(KEY_KP_3))
+    if (IsKeyPressed(TANK_3_FIRE))
       FireBullet(3);
   }
 
@@ -316,12 +287,8 @@ static void DrawGame(void) {
     if (bullets[i].active)
       DrawCircleV(bullets[i].pos, BULLET_R, bullets[i].color);
 
-  // TODO: the hud should be tunable too since players can change their controls
-  // and recompile
   int y = 10;
-  DrawText("P1 WASD+C   P2 IJKL+M   P3 Arrows+/   P4 Numpad 8456 + KP3   R: "
-           "new maze",
-           10, y, 18, RAYWHITE);
+  DrawText(TANK_CONTROLS_MSG, 10, y, 18, RAYWHITE);
   y += 22;
   for (int t = 0; t < 4; t++) {
     DrawText(TextFormat("P%d lives: %d", t + 1, tanks[t].lives), 10 + t * 220,
@@ -350,11 +317,11 @@ static void FireBullet(int tidx) {
 
       PlaySound(SND_FIRE); // sounds can't overlap though
 
-      // Spawn safety: if spawned overlapping a wall (barrel stuffed),
+      // Bullet spawn safety: if spawned overlapping a wall (barrel stuffed),
       // annihilate it (TODO: this should maybe just bounce back instead)
-      for (int pass = 0; pass < SPAWN_SAFETY_ITER; ++pass) {
+      for (int pass = 0; pass < WALL_SHOT_SAFETY_ITERS; pass++) {
         bool hit = false;
-        for (int w = 0; w < wallCount; ++w) {
+        for (int w = 0; w < wallCount; w++) {
           if (BulletCollideWall(&bullets[i], &walls[w])) {
             hit = true;
             break;
