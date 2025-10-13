@@ -10,7 +10,7 @@ typedef struct {
   Vector2 pos;
   float angleDeg;
   Color color;
-  int lives;
+  int health;
   bool alive;
 } Tank;
 
@@ -69,8 +69,6 @@ static bool BulletHitsTank(Bullet *b, const Tank *t);
 static void HandleBulletHitsTanks(void);
 static void HandleBulletHitsBullets(void);
 
-static void RespawnTank(int tidx);
-
 int main(void) {
   InitWindow(SCREEN_W, SCREEN_H, "tank trouble raylib");
   SetTargetFPS(120);
@@ -113,7 +111,7 @@ static void ResetRound(void) {
   MazeAddLoops(); // slice out some walls from dfs to make maze open
   BuildWalls();
 
-  // corners spawn
+  // corners respawn
   Vector2 corners[4] = {
       (Vector2){ORIGIN_X + CELL * 0.5f, ORIGIN_Y + CELL * 0.5f},
       (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
@@ -126,12 +124,12 @@ static void ResetRound(void) {
 
   for (int i = 0; i < 4; i++) {
     tanks[i].pos = corners[i];
-    tanks[i].angleDeg = (i == 1)   ? 180.0f
-                        : (i == 2) ? 90.0f
-                        : (i == 3) ? -90.0f
-                                   : 0.0f;
+    tanks[i].angleDeg = (i == 0)   ? 45.0f    // top left green
+                        : (i == 1) ? 135.0f   // top right red
+                        : (i == 2) ? -45.0f   // bottoml eft blue
+                                   : -135.0f; // bottom right yellow
     tanks[i].color = colors[i];
-    tanks[i].lives = START_LIVES;
+    tanks[i].health = START_HEALTH;
     tanks[i].alive = true;
   }
   for (int i = 0; i < MAX_BULLETS; i++)
@@ -257,12 +255,6 @@ static void UpdateGame(float dt) {
   // pvp. also bullets can hit each other
   HandleBulletHitsTanks();
   HandleBulletHitsBullets();
-
-  for (int t = 0; t < 4; t++) {
-    if (!tanks[t].alive && tanks[t].lives > 0) {
-      RespawnTank(t);
-    }
-  }
 }
 
 static void DrawGame(void) {
@@ -291,7 +283,7 @@ static void DrawGame(void) {
   DrawText(TANK_CONTROLS_MSG, 10, y, 18, RAYWHITE);
   y += 22;
   for (int t = 0; t < 4; t++) {
-    DrawText(TextFormat("P%d lives: %d", t + 1, tanks[t].lives), 10 + t * 220,
+    DrawText(TextFormat("P%d health: %d", t + 1, tanks[t].health), 10 + t * 220,
              y, 20, tanks[t].color);
   }
 }
@@ -428,9 +420,8 @@ static void HandleBulletHitsTanks(void) {
       if (BulletHitsTank(b, &tanks[t])) {
         b->active = false;
         if (tanks[t].alive) {
-          tanks[t].lives--;
-          // dies if now < 1; respawn handled in update func
-          tanks[t].alive = (tanks[t].lives > 0);
+          tanks[t].health--;
+          tanks[t].alive = (tanks[t].health > 0);
         }
         break;
       }
@@ -458,24 +449,6 @@ static void HandleBulletHitsBullets(void) {
       }
     }
   }
-}
-
-static void RespawnTank(int tidx) {
-  // Place back near the corner spawn, angle reset
-  Vector2 respawns[4] = {
-      (Vector2){ORIGIN_X + CELL * 0.5f, ORIGIN_Y + CELL * 0.5f},
-      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
-                ORIGIN_Y + CELL * 0.5f},
-      (Vector2){ORIGIN_X + CELL * 0.5f,
-                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
-      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
-                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f}};
-  tanks[tidx].pos = respawns[tidx];
-  tanks[tidx].angleDeg = (tidx == 1)   ? 180.0f
-                         : (tidx == 2) ? 90.0f
-                         : (tidx == 3) ? -90.0f
-                                       : 0.0f;
-  tanks[tidx].alive = true;
 }
 
 // basic dfs maze (see wikipedia)

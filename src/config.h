@@ -26,7 +26,7 @@
 #define BULLET_LIFETIME 5.0f
 
 // tank stats
-#define START_LIVES 3
+#define START_HEALTH 3
 
 #define TANK_W 30.0f
 #define TANK_H 22.0f
