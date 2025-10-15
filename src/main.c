@@ -19,7 +19,6 @@ typedef struct {
   bool active;
   float lifetimeSec;
   int bounces;
-  int owner; // tank index [0..3]
   Color color;
 } Bullet;
 
@@ -142,7 +141,7 @@ static void UpdateGame(float dt) {
       tanks[0].pos.y -= f.y * TANK_SPEED * dt;
     }
     HandleTankWallCollision(&tanks[0]);
-    if (IsKeyPressed(KEY_C))
+    if (IsKeyPressed(TANK_0_FIRE))
       FireBullet(0);
   }
 
@@ -163,7 +162,7 @@ static void UpdateGame(float dt) {
       tanks[1].pos.y -= f.y * TANK_SPEED * dt;
     }
     HandleTankWallCollision(&tanks[1]);
-    if (IsKeyPressed(KEY_M))
+    if (IsKeyPressed(TANK_1_FIRE))
       FireBullet(1);
   }
 
@@ -184,7 +183,7 @@ static void UpdateGame(float dt) {
       tanks[2].pos.y -= f.y * TANK_SPEED * dt;
     }
     HandleTankWallCollision(&tanks[2]);
-    if (IsKeyPressed(KEY_SPACE))
+    if (IsKeyPressed(TANK_2_FIRE))
       FireBullet(2);
   }
 
@@ -288,7 +287,6 @@ static void FireBullet(int tidx) {
       bullets[i].active = true;
       bullets[i].bounces = 0;
       bullets[i].lifetimeSec = BULLET_LIFETIME;
-      bullets[i].owner = tidx;
       bullets[i].color = tanks[tidx].color;
       bullets[i].pos = (Vector2){
           tanks[tidx].pos.x + dir.x * (TANK_W * 0.5f + BULLET_R + 2.0f),
@@ -298,7 +296,7 @@ static void FireBullet(int tidx) {
       PlaySound(SND_FIRE); // sounds can't overlap though
 
       // Bullet spawn safety: if spawned overlapping a wall (barrel stuffed),
-      // annihilate it (TODO: this should maybe just bounce back instead)
+      // annihilate it
       for (int pass = 0; pass < WALL_SHOT_SAFETY_ITERS; pass++) {
         bool hit = false;
         for (int w = 0; w < wallCount; w++) {
