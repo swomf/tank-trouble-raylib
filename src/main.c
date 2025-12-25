@@ -385,8 +385,8 @@ static void ReflectBullet(Bullet *b, Vector2 n) {
 
 // axis aligned boudning boxes
 static void HandleTankWallCollision(Tank *t) {
-  Rectangle tankBox = {t->pos.x - TANK_W / 2, t->pos.y - TANK_H / 2, TANK_W,
-                       TANK_H};
+  Rectangle tankBox = {t->pos.x - TANK_W / 2, t->pos.y - TANK_W / 2, TANK_W,
+                       TANK_W};
 
   for (int i = 0; i < wallCount; i++) {
     if (CheckCollisionRecs(tankBox, walls[i].rect)) {
@@ -397,7 +397,7 @@ static void HandleTankWallCollision(Tank *t) {
         continue;
 
       float dy = (t->pos.y) - (w.y + w.height / 2);
-      float py = (w.height / 2 + TANK_H / 2) - fabsf(dy);
+      float py = (w.height / 2 + TANK_W / 2) - fabsf(dy);
       if (py <= 0)
         continue;
 
@@ -406,9 +406,6 @@ static void HandleTankWallCollision(Tank *t) {
       } else {
         t->pos.y += (dy < 0 ? -py : py);
       }
-
-      tankBox = (Rectangle){t->pos.x - TANK_W / 2, t->pos.y - TANK_H / 2,
-                            TANK_W, TANK_H};
     }
   }
 }

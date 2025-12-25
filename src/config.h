@@ -4,11 +4,11 @@
 #define TANKTROUBLE_CONFIG_H
 
 // map generation
-#define SCREEN_W 1200
-#define SCREEN_H 900
+#define SCREEN_W 2200
+#define SCREEN_H 1550
 #define MAZE_COLS 12
 #define MAZE_ROWS 12
-#define CELL 60
+#define CELL 120
 #define WALL_T 8.0f
 
 // Pressing R resets the map at any point.
@@ -28,17 +28,17 @@
 #define MAX_MAP_BULLETS 600 // maximum bullet entities overall, dont change
 #define MAX_BULLETS 10      // max bullets PER tank, change if wanted
 #define MAX_BOUNCES 8
-#define BULLET_R 3.0f // radius
-#define BULLET_SPEED 420.0f
-#define BULLET_LIFETIME 5.0f
+#define BULLET_R 6.0f // radius
+#define BULLET_SPEED 840.0f
+#define BULLET_LIFETIME 8.0f
 
 // tank stats
 #define START_HEALTH 3
 
-#define TANK_W 30.0f
-#define TANK_H 22.0f
-#define TANK_SPEED 150.0f
-#define TURN_SPEED 140.0f
+#define TANK_W 60.0f
+#define TANK_H 44.0f
+#define TANK_SPEED 300.0f
+#define TURN_SPEED 210.0f
 #define CANNON_SCALE 0.5f
 
 #define TANK_COLORS                                                            \
