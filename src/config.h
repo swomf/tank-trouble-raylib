@@ -25,7 +25,8 @@
 #define MAX_WALLS 9000
 
 // bullet stats
-#define MAX_BULLETS 600
+#define MAX_MAP_BULLETS 600 // maximum bullet entities overall, dont change
+#define MAX_BULLETS 10      // max bullets PER tank, change if wanted
 #define MAX_BOUNCES 8
 #define BULLET_R 3.0f // radius
 #define BULLET_SPEED 420.0f

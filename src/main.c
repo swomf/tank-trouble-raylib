@@ -12,6 +12,7 @@ typedef struct {
   Color color;
   int health;
   bool alive;
+  int bulletsActive;
 } Tank;
 
 typedef struct {
@@ -33,7 +34,7 @@ typedef struct {
 
 // globals
 static Tank tanks[4];
-static Bullet bullets[MAX_BULLETS];
+static Bullet bullets[MAX_MAP_BULLETS];
 static Wall walls[MAX_WALLS];
 static int wallCount = 0;
 static Cell maze[MAZE_ROWS][MAZE_COLS];
@@ -53,6 +54,7 @@ static void FireBullet(int tidx);
 static bool BulletCollideWall(Bullet *b, Wall *w);
 static void ReflectBullet(Bullet *b, Vector2 n);
 static void HandleTankWallCollision(Tank *t);
+static void deactivateBullet(Bullet *b);
 
 static void MazeInit(void);
 static void MazeDFS(int r, int c);
@@ -119,8 +121,9 @@ static void ResetRound(void) {
     tanks[i].health = START_HEALTH;
     tanks[i].alive = true;
   }
-  for (int i = 0; i < MAX_BULLETS; i++)
-    bullets[i].active = false;
+  for (int i = 0; i < MAX_MAP_BULLETS; i++)
+    if (bullets[i].active)
+      deactivateBullet(&bullets[i]);
 }
 
 static void UpdateGame(float dt) {
@@ -222,7 +225,7 @@ static void UpdateGame(float dt) {
   }
 
   // bullet stuff
-  for (int i = 0; i < MAX_BULLETS; i++) {
+  for (int i = 0; i < MAX_MAP_BULLETS; i++) {
     Bullet *b = &bullets[i];
     if (!b->active)
       continue;
@@ -240,13 +243,13 @@ static void UpdateGame(float dt) {
     if (bounced) {
       b->bounces++;
       if (b->bounces > MAX_BOUNCES)
-        b->active = false;
+        deactivateBullet(b);
     }
     if (b->lifetimeSec <= 0)
-      b->active = false;
+      deactivateBullet(b);
     if (b->pos.x < -200 || b->pos.x > SCREEN_W + 200 || b->pos.y < -200 ||
         b->pos.y > SCREEN_H + 200)
-      b->active = false;
+      deactivateBullet(b);
   }
 
   // pvp. also bullets can hit each other
@@ -272,7 +275,7 @@ static void DrawGame(void) {
   }
 
   // bullet
-  for (int i = 0; i < MAX_BULLETS; i++)
+  for (int i = 0; i < MAX_MAP_BULLETS; i++)
     if (bullets[i].active)
       DrawCircleV(bullets[i].pos, BULLET_R, bullets[i].color);
 
@@ -285,42 +288,57 @@ static void DrawGame(void) {
   }
 }
 
+// for bullet destruction see "bullet stuff" in UpdateGame
+//
+// also see all deactivateBullet(Bullet* b) calls
 static void FireBullet(int tidx) {
-  if (!tanks[tidx].alive)
+  if (!tanks[tidx].alive || tanks[tidx].bulletsActive >= MAX_BULLETS)
     return;
 
-  for (int i = 0; i < MAX_BULLETS; i++) {
-    if (!bullets[i].active) {
-      float rad = tanks[tidx].angleDeg * DEG2RAD;
-      Vector2 dir = (Vector2){cosf(rad), sinf(rad)};
+  for (int i = 0; i < MAX_MAP_BULLETS; i++) {
+    if (bullets[i].active) // find first inactive bullet to animate
+      continue;
 
-      bullets[i].active = true;
-      bullets[i].bounces = 0;
-      bullets[i].lifetimeSec = BULLET_LIFETIME;
-      bullets[i].color = tanks[tidx].color;
-      bullets[i].pos = (Vector2){
-          tanks[tidx].pos.x + dir.x * (TANK_W * 0.5f + BULLET_R + 2.0f),
-          tanks[tidx].pos.y + dir.y * (TANK_W * 0.5f + BULLET_R + 2.0f)};
-      bullets[i].vel = (Vector2){dir.x * BULLET_SPEED, dir.y * BULLET_SPEED};
+    float rad = tanks[tidx].angleDeg * DEG2RAD;
+    Vector2 dir = (Vector2){cosf(rad), sinf(rad)};
 
-      PlaySound(SND_FIRE); // sounds can't overlap though
+    tanks[tidx].bulletsActive++;
 
-      // Bullet spawn safety: if spawned overlapping a wall (barrel stuffed),
-      // annihilate it
-      for (int pass = 0; pass < WALL_SHOT_SAFETY_ITERS; pass++) {
-        bool hit = false;
-        for (int w = 0; w < wallCount; w++) {
-          if (BulletCollideWall(&bullets[i], &walls[w])) {
-            hit = true;
-            break;
-          }
-        }
-        if (!hit)
+    bullets[i].active = true;
+    bullets[i].bounces = 0;
+    bullets[i].lifetimeSec = BULLET_LIFETIME;
+    bullets[i].color = tanks[tidx].color;
+    bullets[i].pos = (Vector2){
+        tanks[tidx].pos.x + dir.x * (TANK_W * 0.5f + BULLET_R + 2.0f),
+        tanks[tidx].pos.y + dir.y * (TANK_W * 0.5f + BULLET_R + 2.0f)};
+    bullets[i].vel = (Vector2){dir.x * BULLET_SPEED, dir.y * BULLET_SPEED};
+
+    PlaySound(SND_FIRE); // sounds can't overlap though
+
+    // Bullet spawn safety: if spawned overlapping a wall (barrel stuffed),
+    // annihilate it
+    for (int pass = 0; pass < WALL_SHOT_SAFETY_ITERS; pass++) {
+      bool hit = false;
+      for (int w = 0; w < wallCount; w++) {
+        if (BulletCollideWall(&bullets[i], &walls[w])) {
+          hit = true;
           break;
-        bullets[i].bounces = MAX_BOUNCES;
+        }
       }
-      return;
+      if (!hit)
+        break;
+      bullets[i].bounces = MAX_BOUNCES;
     }
+    return;
+  }
+}
+
+static void deactivateBullet(Bullet *b) {
+  b->active = false;
+  for (int i = 0; i < sizeof(tanks) / sizeof(Tank); i++) {
+    if (tanks[i].color.r == b->color.r && tanks[i].color.g == b->color.g &&
+        tanks[i].color.b == b->color.b)
+      tanks[i].bulletsActive--;
   }
 }
 
@@ -408,13 +426,13 @@ static bool BulletHitsTank(Bullet *b, const Tank *t) {
 }
 
 static void HandleBulletHitsTanks(void) {
-  for (int i = 0; i < MAX_BULLETS; i++) {
+  for (int i = 0; i < MAX_MAP_BULLETS; i++) {
     Bullet *b = &bullets[i];
     if (!b->active)
       continue;
     for (int t = 0; t < 4; t++) {
       if (BulletHitsTank(b, &tanks[t])) {
-        b->active = false;
+        deactivateBullet(b);
         if (tanks[t].alive) {
           tanks[t].health--;
           tanks[t].alive = (tanks[t].health > 0);
@@ -429,18 +447,18 @@ static void HandleBulletHitsTanks(void) {
 // they destroy each other on impact because i dont trust ngnl style bouncing
 // (yet...)
 static void HandleBulletHitsBullets(void) {
-  for (int i = 0; i < MAX_BULLETS; i++) {
+  for (int i = 0; i < MAX_MAP_BULLETS; i++) {
     if (!bullets[i].active)
       continue;
-    for (int j = i + 1; j < MAX_BULLETS; j++) {
+    for (int j = i + 1; j < MAX_MAP_BULLETS; j++) {
       if (!bullets[j].active)
         continue;
       float dx = bullets[i].pos.x - bullets[j].pos.x;
       float dy = bullets[i].pos.y - bullets[j].pos.y;
       float rr = (BULLET_R + BULLET_R);
       if (dx * dx + dy * dy <= rr * rr) {
-        bullets[i].active = false;
-        bullets[j].active = false;
+        deactivateBullet(&bullets[i]);
+        deactivateBullet(&bullets[j]);
         break;
       }
     }
