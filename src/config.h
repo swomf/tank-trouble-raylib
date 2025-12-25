@@ -10,6 +10,12 @@
 #define MAZE_ROWS 12
 #define CELL 60
 #define WALL_T 8.0f
+
+// Pressing R resets the map at any point.
+//    Remove this comment to prevent R from firing a
+//    reset when more than 1 tank remains (i.e. round not ended yet).
+#define SAFE_R
+
 // (advanced) map generation: chance to remove extra wall on mazegen
 #define LOOP_CHANCE 0.2f
 

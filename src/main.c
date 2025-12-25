@@ -208,8 +208,18 @@ static void UpdateGame(float dt) {
       FireBullet(3);
   }
 
-  if (IsKeyPressed(KEY_R))
-    ResetRound();
+  if (IsKeyPressed(KEY_R)) {
+// R resets round, prevent R from being misfired before round ends
+#ifdef SAFE_R
+    int j = 0;
+    for (int i = 0; i < sizeof(tanks) / sizeof(Tank); i++) {
+      if (tanks[i].alive)
+        j++;
+    }
+    if (j <= 1)
+#endif
+      ResetRound();
+  }
 
   // bullet stuff
   for (int i = 0; i < MAX_BULLETS; i++) {
