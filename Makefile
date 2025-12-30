@@ -1,20 +1,21 @@
-CC = gcc
-CFLAGS = -Wall -std=c99 -O2 -Iinclude
-LIBS = -lraylib -lm -lpthread -ldl -lrt -lX11
+CFLAGS = -Wall -std=c99 -O2 -pedantic
+LDLIBS = -lraylib -lm -lpthread -ldl -lrt -lX11
 
 SRC = src/main.c
 OBJ = $(SRC:.c=.o)
-CONFIG = src/config.h
-
 TARGET = tanktrouble
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LIBS)
+all: $(TARGET)
 
-$(OBJ): $(CONFIG)
+$(TARGET): $(OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+
+$(OBJ): src/config.h src/types.h
 
 run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	$(RM) -f $(OBJ) $(TARGET)
+
+.PHONY: all clean run
