@@ -1,39 +1,13 @@
 #include "config.h"
+#include "types.h"
 #include <math.h>
 #include <raylib.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
 
-// types
-typedef struct {
-  Vector2 pos;
-  float angleDeg;
-  Color color;
-  int health;
-  bool alive;
-  int bulletsActive;
-} Tank;
-
-typedef struct {
-  Vector2 pos, vel;
-  bool active;
-  float lifetimeSec;
-  int bounces;
-  Color color;
-} Bullet;
-
-typedef struct {
-  Rectangle rect;
-} Wall;
-
-typedef struct {
-  bool visited;
-  bool wall[4]; // N,E,S,W
-} Cell;
-
 // globals
-static Tank tanks[4];
+// static Tank tanks[TOTAL_TANKS]; // defined in config.h
 static Bullet bullets[MAX_MAP_BULLETS];
 static Wall walls[MAX_WALLS];
 static int wallCount = 0;
@@ -101,24 +75,11 @@ static void ResetRound(void) {
   BuildWalls();
 
   // corners respawn
-  Vector2 corners[4] = {
-      (Vector2){ORIGIN_X + CELL * 0.5f, ORIGIN_Y + CELL * 0.5f},
-      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
-                ORIGIN_Y + CELL * 0.5f},
-      (Vector2){ORIGIN_X + CELL * 0.5f,
-                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
-      (Vector2){ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
-                ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f}};
-  Color colors[4] = TANK_COLORS;
 
-  for (int i = 0; i < 4; i++) {
-    tanks[i].pos = corners[i];
-    tanks[i].angleDeg = (i == 0)   ? 45.0f    // top left green
-                        : (i == 1) ? 135.0f   // top right red
-                        : (i == 2) ? -45.0f   // bottoml eft blue
-                                   : -135.0f; // bottom right yellow
-    tanks[i].color = colors[i];
-    tanks[i].health = START_HEALTH;
+  for (int i = 0; i < TOTAL_TANKS; i++) {
+    tanks[i].pos = tanks[i].spawnpoint;
+    tanks[i].angleDeg = tanks[i].startAngleDeg;
+    tanks[i].health = tanks[i].startHealth;
     tanks[i].alive = true;
   }
   for (int i = 0; i < MAX_MAP_BULLETS; i++)
@@ -127,101 +88,42 @@ static void ResetRound(void) {
 }
 
 static void UpdateGame(float dt) {
-  // P1 controls
-  if (tanks[0].alive) {
-    if (IsKeyDown(TANK_0_LEFT))
-      tanks[0].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(TANK_0_RIGHT))
-      tanks[0].angleDeg += TURN_SPEED * dt;
-    float r = tanks[0].angleDeg * DEG2RAD;
-    Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(TANK_0_UP)) {
-      tanks[0].pos.x += f.x * TANK_SPEED * dt;
-      tanks[0].pos.y += f.y * TANK_SPEED * dt;
-    }
-    if (IsKeyDown(TANK_0_DOWN)) {
-      tanks[0].pos.x -= f.x * TANK_SPEED * dt;
-      tanks[0].pos.y -= f.y * TANK_SPEED * dt;
-    }
-    HandleTankWallCollision(&tanks[0]);
-    if (IsKeyPressed(TANK_0_FIRE))
-      FireBullet(0);
-  }
+  for (int i = 0; i < TOTAL_TANKS; i++) {
+    if (!tanks[i].alive)
+      continue;
+    if (IsKeyDown(tanks[i].left))
+      tanks[i].angleDeg -= TURN_SPEED * dt;
+    if (IsKeyDown(tanks[i].right))
+      tanks[i].angleDeg += TURN_SPEED * dt;
 
-  // P2 controls
-  if (tanks[1].alive) {
-    if (IsKeyDown(TANK_1_LEFT))
-      tanks[1].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(TANK_1_RIGHT))
-      tanks[1].angleDeg += TURN_SPEED * dt;
-    float r = tanks[1].angleDeg * DEG2RAD;
+    float r = tanks[i].angleDeg * DEG2RAD;
     Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(TANK_1_UP)) {
-      tanks[1].pos.x += f.x * TANK_SPEED * dt;
-      tanks[1].pos.y += f.y * TANK_SPEED * dt;
+    if (IsKeyDown(tanks[i].up)) {
+      tanks[i].pos.x += f.x * TANK_SPEED * dt;
+      tanks[i].pos.y += f.y * TANK_SPEED * dt;
     }
-    if (IsKeyDown(TANK_1_DOWN)) {
-      tanks[1].pos.x -= f.x * TANK_SPEED * dt;
-      tanks[1].pos.y -= f.y * TANK_SPEED * dt;
+    if (IsKeyDown(tanks[i].down)) {
+      tanks[i].pos.x -= f.x * TANK_SPEED * dt;
+      tanks[i].pos.y -= f.y * TANK_SPEED * dt;
     }
-    HandleTankWallCollision(&tanks[1]);
-    if (IsKeyPressed(TANK_1_FIRE))
-      FireBullet(1);
-  }
-
-  // P3 controls
-  if (tanks[2].alive) {
-    if (IsKeyDown(TANK_2_LEFT))
-      tanks[2].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(TANK_2_RIGHT))
-      tanks[2].angleDeg += TURN_SPEED * dt;
-    float r = tanks[2].angleDeg * DEG2RAD;
-    Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(TANK_2_UP)) {
-      tanks[2].pos.x += f.x * TANK_SPEED * dt;
-      tanks[2].pos.y += f.y * TANK_SPEED * dt;
-    }
-    if (IsKeyDown(TANK_2_DOWN)) {
-      tanks[2].pos.x -= f.x * TANK_SPEED * dt;
-      tanks[2].pos.y -= f.y * TANK_SPEED * dt;
-    }
-    HandleTankWallCollision(&tanks[2]);
-    if (IsKeyPressed(TANK_2_FIRE))
-      FireBullet(2);
-  }
-
-  // P4 controls
-  if (tanks[3].alive) {
-    if (IsKeyDown(TANK_3_LEFT))
-      tanks[3].angleDeg -= TURN_SPEED * dt;
-    if (IsKeyDown(TANK_3_RIGHT))
-      tanks[3].angleDeg += TURN_SPEED * dt;
-    float r = tanks[3].angleDeg * DEG2RAD;
-    Vector2 f = (Vector2){cosf(r), sinf(r)};
-    if (IsKeyDown(TANK_3_UP)) {
-      tanks[3].pos.x += f.x * TANK_SPEED * dt;
-      tanks[3].pos.y += f.y * TANK_SPEED * dt;
-    }
-    if (IsKeyDown(TANK_3_DOWN)) {
-      tanks[3].pos.x -= f.x * TANK_SPEED * dt;
-      tanks[3].pos.y -= f.y * TANK_SPEED * dt;
-    }
-    HandleTankWallCollision(&tanks[3]);
-    if (IsKeyPressed(TANK_3_FIRE))
-      FireBullet(3);
+    HandleTankWallCollision(&tanks[i]);
+    if (IsKeyPressed(tanks[i].fire))
+      FireBullet(i);
   }
 
   if (IsKeyPressed(KEY_R)) {
-// R resets round, prevent R from being misfired before round ends
-#ifdef SAFE_R
-    int j = 0;
-    for (int i = 0; i < sizeof(tanks) / sizeof(Tank); i++) {
-      if (tanks[i].alive)
-        j++;
-    }
-    if (j <= 1)
-#endif
+    // R resets round, prevent R from being misfired before round ends
+    if (SAFE_R) {
+      int j = 0;
+      for (int i = 0; i < sizeof(tanks) / sizeof(Tank); i++) {
+        if (tanks[i].alive)
+          j++;
+      }
+      if (j <= 1)
+        ResetRound();
+    } else {
       ResetRound();
+    }
   }
 
   // bullet stuff
@@ -269,8 +171,8 @@ static void DrawGame(void) {
     DrawRectanglePro(body, (Vector2){TANK_W / 2, TANK_H / 2}, tanks[t].angleDeg,
                      tanks[t].color);
     // TODO: barrel length is visual only. basically legacy code
-    Vector2 barrel = {tanks[t].pos.x + cosf(rad) * TANK_W * CANNON_SCALE,
-                      tanks[t].pos.y + sinf(rad) * TANK_W * CANNON_SCALE};
+    Vector2 barrel = {tanks[t].pos.x + cosf(rad) * TANK_W * 0.5f,
+                      tanks[t].pos.y + sinf(rad) * TANK_W * 0.5f};
     DrawLineEx(tanks[t].pos, barrel, 4.0f, RAYWHITE);
   }
 
@@ -427,7 +329,7 @@ static void HandleBulletHitsTanks(void) {
     Bullet *b = &bullets[i];
     if (!b->active)
       continue;
-    for (int t = 0; t < 4; t++) {
+    for (int t = 0; t < TOTAL_TANKS; t++) {
       if (BulletHitsTank(b, &tanks[t])) {
         deactivateBullet(b);
         if (tanks[t].alive) {

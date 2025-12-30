@@ -1,91 +1,130 @@
-#include <raylib.h>
+#include "types.h"
 
 #ifndef TANKTROUBLE_CONFIG_H
 #define TANKTROUBLE_CONFIG_H
 
+// NOTE: some of the following consts are wrapped in enums because
+//       they are compile time constants.
+
 // map generation
-#define SCREEN_W 2200
-#define SCREEN_H 1550
-#define MAZE_COLS 12
-#define MAZE_ROWS 12
-#define CELL 120
-#define WALL_T 8.0f
+static const int SCREEN_W = 2200;        // pixels
+static const int SCREEN_H = 1550;        // pixels
+enum { MAZE_COLS = 12, MAZE_ROWS = 12 }; // cells
+static const int CELL = 120;             // pixels
+static const int WALL_T = 8;             // pixels
 
 // Pressing R resets the map at any point.
-//    Remove this comment to prevent R from firing a
-//    reset when more than 1 tank remains (i.e. round not ended yet).
-#define SAFE_R
+//    TRUE: R only resets when 1 tank remains (win) or 0 tanks remain (draw)
+//    FALSE: R resets at any time regardless of remaining tank count
+static const bool SAFE_R = true;
 
 // (advanced) map generation: chance to remove extra wall on mazegen
-#define LOOP_CHANCE 0.2f
+static const float LOOP_CHANCE = 0.2f;
 
-#define ORIGIN_X ((SCREEN_W - (MAZE_COLS * CELL)) / 2)
-#define ORIGIN_Y ((SCREEN_H - (MAZE_ROWS * CELL)) / 2)
-
-#define MAX_WALLS 9000
+static const int ORIGIN_X = ((SCREEN_W - (MAZE_COLS * CELL)) / 2);
+static const int ORIGIN_Y = ((SCREEN_H - (MAZE_ROWS * CELL)) / 2);
 
 // bullet stats
-#define MAX_MAP_BULLETS 600 // maximum bullet entities overall, dont change
-#define MAX_BULLETS 10      // max bullets PER tank, change if wanted
-#define MAX_BOUNCES 8
-#define BULLET_R 6.0f // radius
-#define BULLET_SPEED 840.0f
-#define BULLET_LIFETIME 8.0f
+enum { MAX_BULLETS = 10 }; // max bullets PER tank
+static const int MAX_BOUNCES = 8;
+static const float BULLET_R = 6.0f; // radius
+static const float BULLET_SPEED = 840.0f;
+static const float BULLET_LIFETIME = 8.0f;
 
-// tank stats
-#define START_HEALTH 3
+// tank handling and stats
+static const float TANK_W = 60.0f;
+static const float TANK_H = 44.0f;
+static const float TANK_SPEED = 300.0f;
+static const float TURN_SPEED = 210.0f;
 
-#define TANK_W 60.0f
-#define TANK_H 44.0f
-#define TANK_SPEED 300.0f
-#define TURN_SPEED 210.0f
-#define CANNON_SCALE 0.5f
+// cosmetic message only (for top of screen)
+static const char *TANK_CONTROLS_MSG = "P1 WASD + C ... "
+                                       "P2 IJKL + M ... "
+                                       "P3 Arrows + Space ... "
+                                       "P4 Numpad 8456 + 0 ... "
+                                       "R: new maze";
 
-#define TANK_COLORS                                                            \
-  {(Color){0, 228, 48, 255}, (Color){230, 41, 55, 255},                        \
-   (Color){0, 121, 241, 255}, (Color){255, 161, 0, 255}};
+// clang-format off
+// NOTE: after changing tank controls
+//       you may want to change the cosmetic message above
+static Tank tanks[] = {
+  { // TANK 0 (top left)
+    .up    = KEY_W,
+    .left  = KEY_A,
+    .down  = KEY_S, 
+    .right = KEY_D,
+    .fire  = KEY_C,
 
-// tank controls
-#define TANK_CONTROLS_MSG                                                      \
-  "P1 WASD + C ... "                                                           \
-  "P2 IJKL + M ... "                                                           \
-  "P3 Arrows + Space ... "                                                     \
-  "P4 Numpad 8456 + 0 ... "                                                    \
-  "R: new maze" // cosmetic only; real controls below
+    .color      = {0, 228, 48, 255}, // green rgba
+    .startHealth = 3,
 
-#define TANK_0_UP KEY_W
-#define TANK_0_LEFT KEY_A
-#define TANK_0_DOWN KEY_S
-#define TANK_0_RIGHT KEY_D
-#define TANK_0_FIRE KEY_C
+    .spawnpoint = {
+      ORIGIN_X + CELL * 0.5f,  // x
+      ORIGIN_Y + CELL * 0.5f}, // y
+    .startAngleDeg = 45.0f,
+  },
+  { // TANK 1 (top right)
+    .up    = KEY_I,
+    .left  = KEY_J,
+    .down  = KEY_K,
+    .right = KEY_L,
+    .fire  = KEY_M,
 
-#define TANK_1_UP KEY_I
-#define TANK_1_LEFT KEY_J
-#define TANK_1_DOWN KEY_K
-#define TANK_1_RIGHT KEY_L
-#define TANK_1_FIRE KEY_M
+    .color = {230, 41, 55, 255}, // red rgba
+    .startHealth = 3,
 
-#define TANK_2_UP KEY_UP
-#define TANK_2_LEFT KEY_LEFT
-#define TANK_2_DOWN KEY_DOWN
-#define TANK_2_RIGHT KEY_RIGHT
-#define TANK_2_FIRE KEY_SPACE
+    .spawnpoint = {
+      ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+      ORIGIN_Y + CELL * 0.5f},
+    .startAngleDeg = 135.0f,
+  },
+  { // TANK 2 (bottom left)
+    .up    = KEY_UP,
+    .left  = KEY_LEFT,
+    .down  = KEY_DOWN,
+    .right = KEY_RIGHT,
+    .fire  = KEY_SPACE,
 
-#define TANK_3_UP KEY_KP_8
-#define TANK_3_LEFT KEY_KP_4
-#define TANK_3_DOWN KEY_KP_5
-#define TANK_3_RIGHT KEY_KP_6
-#define TANK_3_FIRE KEY_KP_0
+    .color = {0, 121, 241, 255}, // blue rgba
+    .startHealth = 3,
+
+    .spawnpoint = {
+      ORIGIN_X + CELL * 0.5f,
+      ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
+    .startAngleDeg = -45.0f,
+  },
+  { // TANK 3 (bottom right)
+    .up = KEY_KP_8,
+    .left = KEY_KP_4,
+    .down = KEY_KP_5,
+    .right = KEY_KP_6,
+    .fire = KEY_KP_0,
+
+    .color = {255, 161, 0, 255}, // orange rgba
+    .startHealth = 3,
+
+    .spawnpoint = {
+      ORIGIN_X + (MAZE_COLS - 1) * CELL + CELL * 0.5f,
+      ORIGIN_Y + (MAZE_ROWS - 1) * CELL + CELL * 0.5f},
+      .startAngleDeg = -135.0f,
+  }
+};
+// clang-format on
 
 // sound settings
-
-#define MASTER_VOLUME 0.9f
+static const float MASTER_VOLUME = 1.0f;
 
 // (advanced) checks to kills a bullet if it spawns inside a wall
 // 0: allows wallshots if you go up to a wall
 // 1: allows limited wallshots
 // 2: recommended
 // 3+: not really needed
-#define WALL_SHOT_SAFETY_ITERS 2
+static const int WALL_SHOT_SAFETY_ITERS = 2;
 
+// derived consts, dont change
+enum {
+  TOTAL_TANKS = sizeof(tanks) / sizeof(Tank),
+  MAX_MAP_BULLETS = MAX_BULLETS * TOTAL_TANKS,
+  MAX_WALLS = MAZE_COLS * MAZE_ROWS * 4
+};
 #endif
