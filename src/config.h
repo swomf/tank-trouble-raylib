@@ -13,10 +13,12 @@ enum { MAZE_COLS = 12, MAZE_ROWS = 12 }; // cells
 static const int CELL = 120;             // pixels
 static const int WALL_T = 8;             // pixels
 
-// Pressing R resets the map at any point.
+// Normally, pressing R resets the map and players at any point.
 //    TRUE: R only resets when 1 tank remains (win) or 0 tanks remain (draw)
 //    FALSE: R resets at any time regardless of remaining tank count
-static const bool SAFE_R = true;
+// FALSE is recommended unless someone keeps
+// accidentally hitting R before the round ends.
+static const bool SAFE_R = false;
 
 // (advanced) map generation: chance to remove extra wall on mazegen
 static const float LOOP_CHANCE = 0.2f;
